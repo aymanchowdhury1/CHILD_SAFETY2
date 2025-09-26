@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Child Safety Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.3s ease;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-circle {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            margin: 30px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s ease;
+            border: 5px solid;
+        }
+
+        .status-normal {
+            background-color: #4CAF50;
+            border-color: #45a049;
+        }
+
+        .status-dangerous {
+            background-color: #f44336;
+            border-color: #d32f2f;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .controls {
+            margin: 30px 0;
+        }
+
+        button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0b7dda;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .status-text {
+            font-size: 20px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+
+        .logs {
+            text-align: left;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .log-danger {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .log-normal {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .log-info {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Child Safety Monitor</h1>
+
+        <div id="statusCircle" class="status-circle status-normal">
+            <div id="statusText">NORMAL</div>
+        </div>
+
+        <div class="status-text" id="statusDescription">Device access is normal</div>
+
+        <div class="controls">
+            <button id="testSoundBtn" onclick="playTestSound()">Test Sound</button>
+            <button onclick="resetDetection()">Reset Detection</button>
+            <button onclick="triggerDangerMode()" style="background-color: #ff5722;">Manual Danger Test</button>
+            <button onclick="checkLocalStorage()" style="background-color: #9c27b0;">Check localStorage</button>
+        </div>
+
+        <div class="logs" id="logsContainer">
+            <div class="log-entry log-info">System initialized. Monitoring device access...</div>
+        </div>
+    </div>
+
+    <audio id="alertSound" preload="auto">
+        <source src="music.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+
+    <!-- Fallback beep sound using Web Audio API -->
+    <script>
+        // Create a simple beep sound as fallback
+        function createBeepSound() {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // 800Hz beep
+            oscillator.type = 'sine';
+
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+        }
+    </script>
+
+    <script>
+        class ChildSafetyMonitor {
+            constructor() {
+                this.isDangerous = false;
+                this.detectionActive = true;
+                this.lastActivity = Date.now();
+                this.suspiciousActivityCount = 0;
+                this.maxSuspiciousActivities = 3;
+                this.audioContext = null;
+                this.alertSoundInterval = null;
+
+                this.initializeAudioContext();
+                this.initializeEventListeners();
+                this.startMonitoring();
+                this.log('info', 'Child Safety Monitor initialized');
+            }
+
+            initializeAudioContext() {
+                try {
+                    // Initialize audio context for beep sounds
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                    // Add user interaction handler to resume audio context
+                    const resumeAudioContext = () => {
+                        if (this.audioContext && this.audioContext.state === 'suspended') {
+                            this.audioContext.resume();
+                            this.log('info', 'Audio context resumed by user interaction');
+                        }
+                    };
+
+                    // Resume audio context on any user interaction
+                    ['click', 'touchstart', 'keydown', 'mousedown'].forEach(event => {
+                        document.addEventListener(event, resumeAudioContext, { once: false });
+                    });
+
+                } catch (error) {
+                    this.log('danger', 'Could not initialize audio context: ' + error.message);
+                }
+            }
+
+            initializeEventListeners() {
+                // Page visibility detection
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        this.log('danger', 'Page became hidden - possible unauthorized access');
+                        this.handleSuspiciousActivity();
+                    } else {
+                        this.log('normal', 'Page became visible - normal access');
+                        this.resetSuspiciousActivity();
+                    }
+                });
+
+                // Focus/blur detection
+                window.addEventListener('blur', () => {
+                    this.log('danger', 'Window lost focus - monitoring for unauthorized access');
+                    this.handleSuspiciousActivity();
+                });
+
+                window.addEventListener('focus', () => {
+                    this.log('normal', 'Window gained focus - normal access');
+                    this.resetSuspiciousActivity();
+                });
+
+                // Touch/mouse activity detection
+                document.addEventListener('touchstart', () => this.updateActivity());
+                document.addEventListener('mousedown', () => this.updateActivity());
+                document.addEventListener('keydown', () => this.updateActivity());
+
+                // Device orientation detection
+                if (window.DeviceOrientationEvent) {
+                    window.addEventListener('deviceorientation', (event) => {
+                        this.detectOrientationChange(event);
+                    });
+                }
+
+                // Battery status detection (if available)
+                if ('getBattery' in navigator) {
+                    navigator.getBattery().then(battery => {
+                        battery.addEventListener('levelchange', () => {
+                            this.log('info', `Battery level changed to ${Math.round(battery.level * 100)}%`);
+                        });
+                    });
+                }
+
+                // Network status detection
+                window.addEventListener('online', () => {
+                    this.log('normal', 'Network connection restored');
+                    this.resetSuspiciousActivity();
+                });
+
+                window.addEventListener('offline', () => {
+                    this.log('danger', 'Network connection lost - possible security issue');
+                    this.handleSuspiciousActivity();
+                });
+            }
+
+            startMonitoring() {
+                // Check for localStorage access trigger
+                this.checkAccessTrigger();
+
+                // Check for inactivity every 30 seconds
+                setInterval(() => {
+                    const now = Date.now();
+                    const timeSinceActivity = now - this.lastActivity;
+
+                    if (timeSinceActivity > 30000) { // 30 seconds
+                        this.log('danger', 'No activity detected for 30 seconds - possible unauthorized access');
+                        this.handleSuspiciousActivity();
+                    }
+
+                    // Check for access trigger every 10 seconds
+                    this.checkAccessTrigger();
+                }, 10000); // Check every 10 seconds
+            }
+
+            checkAccessTrigger() {
+                try {
+                    const accessTriggered = localStorage.getItem('childSafetyAccessTriggered');
+                    const accessTime = localStorage.getItem('childSafetyAccessTime');
+
+                    // Debug logging
+                    this.log('info', `Checking localStorage: triggered=${accessTriggered}, time=${accessTime}`);
+
+                    if (accessTriggered === 'true') {
+                        this.log('danger', '🚨 EXTERNAL ACCESS DETECTED! Access page was opened at: ' + new Date(accessTime).toLocaleString());
+                        this.triggerDangerMode();
+
+                        // Clear the trigger after processing
+                        localStorage.removeItem('childSafetyAccessTriggered');
+                        localStorage.removeItem('childSafetyAccessTime');
+                        this.log('info', 'Cleared localStorage trigger flags');
+                    } else if (accessTriggered === null) {
+                        // Only log this occasionally to avoid spam
+                        if (Math.random() < 0.1) { // 10% chance
+                            this.log('info', 'No access trigger found in localStorage');
+                        }
+                    }
+                } catch (e) {
+                    // localStorage might not be available
+                    this.log('danger', 'Could not check localStorage: ' + e.message);
+                }
+            }
+
+            updateActivity() {
+                this.lastActivity = Date.now();
+                if (this.suspiciousActivityCount > 0) {
+                    this.log('normal', 'Normal user activity detected');
+                    this.resetSuspiciousActivity();
+                }
+            }
+
+            detectOrientationChange(event) {
+                // Detect if device is being moved significantly
+                const threshold = 15; // degrees
+                if (Math.abs(event.gamma) > threshold || Math.abs(event.beta) > threshold) {
+                    this.log('info', 'Significant device movement detected');
+                    this.updateActivity();
+                }
+            }
+
+            handleSuspiciousActivity() {
+                this.suspiciousActivityCount++;
+                this.log('danger', `Suspicious activity detected (${this.suspiciousActivityCount}/${this.maxSuspiciousActivities})`);
+
+                if (this.suspiciousActivityCount >= this.maxSuspiciousActivities) {
+                    this.triggerDangerMode();
+                }
+            }
+
+            resetSuspiciousActivity() {
+                if (this.suspiciousActivityCount > 0) {
+                    this.suspiciousActivityCount = 0;
+                    this.log('normal', 'Suspicious activity reset');
+                }
+            }
+
+            triggerDangerMode() {
+                this.isDangerous = true;
+                this.updateUI();
+                this.log('danger', 'DANGER MODE ACTIVATED - Unauthorized access detected!');
+
+                // Play alert sound immediately and repeatedly
+                this.playAlertSound();
+                this.startAlertSoundLoop();
+
+                // Auto-reset after 10 seconds if no more suspicious activity
+                setTimeout(() => {
+                    if (this.suspiciousActivityCount === 0) {
+                        this.isDangerous = false;
+                        this.stopAlertSoundLoop();
+                        this.updateUI();
+                        this.log('normal', 'Danger mode auto-reset - activity normalized');
+                    }
+                }, 10000);
+            }
+
+            startAlertSoundLoop() {
+                // Play alert sound every 3 seconds while in danger mode
+                this.alertSoundInterval = setInterval(() => {
+                    if (this.isDangerous) {
+                        this.playAlertSound();
+                    }
+                }, 3000);
+            }
+
+            stopAlertSoundLoop() {
+                if (this.alertSoundInterval) {
+                    clearInterval(this.alertSoundInterval);
+                    this.alertSoundInterval = null;
+                }
+            }
+
+            updateUI() {
+                const circle = document.getElementById('statusCircle');
+                const statusText = document.getElementById('statusText');
+                const statusDescription = document.getElementById('statusDescription');
+
+                if (this.isDangerous) {
+                    circle.className = 'status-circle status-dangerous';
+                    statusText.textContent = 'DANGEROUS';
+                    statusDescription.textContent = 'Unauthorized access detected! Alert sound playing.';
+                    document.body.style.backgroundColor = '#ffebee';
+                } else {
+                    circle.className = 'status-circle status-normal';
+                    statusText.textContent = 'NORMAL';
+                    statusDescription.textContent = 'Device access is normal';
+                    document.body.style.backgroundColor = '#f0f0f0';
+                }
+            }
+
+            playAlertSound() {
+                // First try the HTML5 audio element
+                const audio = document.getElementById('alertSound');
+                if (audio) {
+                    audio.currentTime = 0; // Reset to beginning
+                    const playPromise = audio.play();
+
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            this.log('info', 'Alert sound played successfully');
+                        }).catch(e => {
+                            this.log('danger', 'Could not play music.mp3: ' + e.message + ' - Using fallback beep');
+                            // Fallback to beep sound
+                            this.playBeepSound();
+                        });
+                    }
+                } else {
+                    // No audio element, use beep sound
+                    this.playBeepSound();
+                }
+            }
+
+            playBeepSound() {
+                try {
+                    // Use the instance's audio context
+                    if (!this.audioContext) {
+                        this.log('danger', 'No audio context available for beep sound');
+                        return;
+                    }
+
+                    // Resume audio context if suspended (required by some browsers)
+                    if (this.audioContext.state === 'suspended') {
+                        this.audioContext.resume();
+                        this.log('info', 'Audio context resumed for alert sound');
+                    }
+
+                    const oscillator = this.audioContext.createOscillator();
+                    const gainNode = this.audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(this.audioContext.destination);
+
+                    // Create a more noticeable alert pattern: three beeps
+                    const now = this.audioContext.currentTime;
+
+                    oscillator.frequency.setValueAtTime(800, now); // 800Hz
+                    oscillator.frequency.setValueAtTime(600, now + 0.2); // 600Hz
+                    oscillator.frequency.setValueAtTime(800, now + 0.4); // 800Hz again
+                    oscillator.type = 'sine';
+
+                    // Volume envelope for louder, more noticeable sound
+                    gainNode.gain.setValueAtTime(0, now);
+                    gainNode.gain.linearRampToValueAtTime(0.5, now + 0.01); // Start louder
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    gainNode.gain.setValueAtTime(0.5, now + 0.2);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                    gainNode.gain.setValueAtTime(0.5, now + 0.4);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+
+                    oscillator.start(now);
+                    oscillator.stop(now + 0.6);
+
+                    this.log('info', 'Fallback beep sound played');
+                } catch (error) {
+                    this.log('danger', 'Could not play beep sound: ' + error.message);
+                }
+            }
+
+            log(type, message) {
+                const logsContainer = document.getElementById('logsContainer');
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+
+                logsContainer.appendChild(logEntry);
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+
+                // Keep only last 20 log entries
+                while (logsContainer.children.length > 20) {
+                    logsContainer.removeChild(logsContainer.firstChild);
+                }
+            }
+
+            resetDetection() {
+                this.isDangerous = false;
+                this.suspiciousActivityCount = 0;
+                this.stopAlertSoundLoop();
+                this.updateUI();
+                this.log('info', 'Detection system reset by user');
+            }
+        }
+
+        // Global function for test sound button
+        function playTestSound() {
+            const monitor = window.safetyMonitor;
+            if (monitor) {
+                monitor.playAlertSound();
+                monitor.log('info', 'Test sound played by user');
+            }
+        }
+
+        function resetDetection() {
+            const monitor = window.safetyMonitor;
+            if (monitor) {
+                monitor.resetDetection();
+            }
+        }
+
+        function triggerDangerMode() {
+            const monitor = window.safetyMonitor;
+            if (monitor) {
+                monitor.log('danger', '🚨 MANUAL DANGER MODE TRIGGERED by user');
+                monitor.triggerDangerMode();
+            }
+        }
+
+        function checkLocalStorage() {
+            const monitor = window.safetyMonitor;
+            if (monitor) {
+                try {
+                    const accessTriggered = localStorage.getItem('childSafetyAccessTriggered');
+                    const accessTime = localStorage.getItem('childSafetyAccessTime');
+
+                    monitor.log('info', `localStorage check: triggered=${accessTriggered}, time=${accessTime}`);
+
+                    // Show all localStorage keys for debugging
+                    const allKeys = Object.keys(localStorage);
+                    monitor.log('info', `All localStorage keys: ${allKeys.join(', ')}`);
+
+                    if (accessTriggered === 'true') {
+                        monitor.log('danger', '⚠️ Access trigger still active in localStorage!');
+                    } else {
+                        monitor.log('info', '✅ No active access triggers found');
+                    }
+                } catch (e) {
+                    monitor.log('danger', 'Could not check localStorage: ' + e.message);
+                }
+            }
+        }
+
+        // Initialize the monitor when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.safetyMonitor = new ChildSafetyMonitor();
+        });
+    </script>
+</body>
+</html>
