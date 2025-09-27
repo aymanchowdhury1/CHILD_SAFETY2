@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Trigger</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .warning-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .message {
+            font-size: 1.2em;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        .timestamp {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 20px;
+        }
+
+        .back-button {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .status-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #f44336;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div class="status-indicator" title="Access triggered"></div>
+
+    <div class="container">
+        <div class="warning-icon">🚨</div>
+        <h1>UNAUTHORIZED ACCESS DETECTED</h1>
+
+        <div class="message">
+            This page has been accessed, which has triggered a security alert on the monitoring system.
+            The monitoring page will now show "DANGEROUS" status and play alert sounds.
+        </div>
+
+        <div class="timestamp">
+            Access Time: <span id="accessTime"></span>
+        </div>
+
+        <a href="index.html" class="back-button">Return to Monitoring</a>
+    </div>
+
+    <script>
+        class AccessTrigger {
+            constructor() {
+                this.websocket = null;
+                this.initializeWebSocket();
+                this.triggerAccess();
+            }
+
+            initializeWebSocket() {
+                try {
+                    // Get server URL - try to detect if we're running locally or need external server
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const host = window.location.hostname;
+
+                    // If running on localhost, try to connect to localhost server
+                    // Otherwise, try to connect to the same host (for external server)
+                    let serverUrl;
+                    if (host === 'localhost' || host === '127.0.0.1') {
+                        serverUrl = `${protocol}//localhost:3000`;
+                    } else {
+                        serverUrl = `${protocol}//${host}:3000`;
+                    }
+
+                    this.websocket = new WebSocket(serverUrl);
+
+                    this.websocket.onopen = (event) => {
+                        console.log('Access page connected to WebSocket server');
+                    };
+
+                    this.websocket.onerror = (error) => {
+                        console.log('Access page WebSocket error:', error);
+                    };
+
+                } catch (error) {
+                    console.log('Could not initialize WebSocket on access page:', error.message);
+                }
+            }
+
+            triggerAccess() {
+                // Set the access trigger in localStorage (for backward compatibility)
+                localStorage.setItem('childSafetyAccessTriggered', 'true');
+                localStorage.setItem('childSafetyAccessTime', new Date().toISOString());
+
+                // Update the timestamp display
+                document.getElementById('accessTime').textContent = new Date().toLocaleString();
+
+                // Log the access
+                console.log('🚨 Unauthorized access triggered at:', new Date().toISOString());
+
+                // Send multi-device alert via WebSocket
+                this.sendMultiDeviceAlert();
+
+                // Optional: Try to communicate with monitoring page if it's open
+                try {
+                    // Send a message to any open monitoring pages
+                    localStorage.setItem('childSafetyAlert', JSON.stringify({
+                        type: 'access_detected',
+                        timestamp: new Date().toISOString(),
+                        message: 'Unauthorized access detected'
+                    }));
+
+                    // Remove the alert after a short time to avoid spam
+                    setTimeout(() => {
+                        localStorage.removeItem('childSafetyAlert');
+                    }, 1000);
+                } catch (e) {
+                    console.log('Could not send alert notification:', e.message);
+                }
+
+                // Auto-redirect to monitoring page after 10 seconds
+                setTimeout(() => {
+                    if (confirm('Automatically return to monitoring page?')) {
+                        window.location.href = 'index.html';
+                    }
+                }, 10000);
+            }
+
+            sendMultiDeviceAlert() {
+                const alertData = {
+                    type: 'access_detected',
+                    message: 'UNAUTHORIZED ACCESS DETECTED!',
+                    timestamp: new Date().toISOString(),
+                    source: window.location.hostname,
+                    userAgent: navigator.userAgent
+                };
+
+                if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                    this.websocket.send(JSON.stringify(alertData));
+                    console.log('Multi-device access alert sent via WebSocket');
+                } else {
+                    console.log('WebSocket not connected, could not send multi-device alert');
+                }
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new AccessTrigger();
+        });
+    </script>
+</body>
+</html>

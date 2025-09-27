@@ -1,0 +1,23 @@
+{
+  "name": "child-safety-monitor-multi-device",
+  "version": "1.0.0",
+  "description": "Multi-device child safety monitoring system with real-time alerts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "express": "^4.18.2"
+  },
+  "keywords": [
+    "child-safety",
+    "monitoring",
+    "multi-device",
+    "websocket",
+    "alert-system"
+  ],
+  "author": "Child Safety Monitor",
+  "license": "MIT"
+}

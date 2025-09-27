@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Child Safety Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.3s ease;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-circle {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            margin: 30px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s ease;
+            border: 5px solid;
+        }
+
+        .status-normal {
+            background-color: #4CAF50;
+            border-color: #45a049;
+        }
+
+        .status-dangerous {
+            background-color: #f44336;
+            border-color: #d32f2f;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .controls {
+            margin: 30px 0;
+        }
+
+        button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .disconnected {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .connecting {
+            background-color: #ff9800;
+            color: white;
+        }
+
+        button:hover {
+            background-color: #0b7dda;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .status-text {
+            font-size: 20px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+
+        .logs {
+            text-align: left;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .log-danger {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .log-normal {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .log-info {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .device-list {
+            text-align: left;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .device-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .device-safe {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .device-dangerous {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .device-status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- Connection Status Indicator -->
+    <div id="connectionStatus" class="connection-status disconnected" title="Multi-device connection status">
+        DISCONNECTED
+    </div>
+
+    <div class="container">
+        <h1>Child Safety Monitor</h1>
+        <div id="multiDeviceInfo" style="font-size: 14px; color: #666; margin-bottom: 10px;">
+            Multi-device monitoring: <span id="deviceCount">Loading...</span>
+        </div>
+
+        <div id="statusCircle" class="status-circle status-normal">
+            <div id="statusText">NORMAL</div>
+        </div>
+
+        <div class="status-text" id="statusDescription">Device access is normal</div>
+
+        <div class="device-list" id="deviceListContainer">
+            <h3>Connected Devices:</h3>
+            <div id="deviceList">No devices connected</div>
+        </div>
+
+        <div class="controls">
+            <button id="enableSoundBtn" onclick="enableSound()" style="background-color: #4CAF50;">🔊 Enable Sound</button>
+            <button id="testSoundBtn" onclick="playTestSound()" style="display: none;">Test Sound</button>
+            <button onclick="resetDetection()">Reset Detection</button>
+            <button onclick="triggerDangerMode()" style="background-color: #ff5722;">Manual Danger Test</button>
+            <button onclick="checkLocalStorage()" style="background-color: #9c27b0;">Check localStorage</button>
+            <button onclick="goToAccessPage()" style="background-color: #ff9800;">🚨 Access</button>
+        </div>
+
+        <div class="logs" id="logsContainer">
+            <div class="log-entry log-info">System initialized. Monitoring device access...</div>
+        </div>
+    </div>
+
+    <audio id="alertSound" preload="auto">
+        <source src="music.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+
+    <script>
+        class ChildSafetyMonitor {
+            constructor() {
+                this.websocket = null;
+                this.connectedDevices = 0;
+                this.isDangerMode = false;
+                this.audioEnabled = false;
+                this.pendingAlert = false;
+                this.initialize();
+            }
+
+            initialize() {
+                this.initializeWebSocket();
+                this.setupEventListeners();
+                this.updateStatus();
+                this.startHeartbeat();
+                this.checkLocalStorageForAlerts();
+            }
+
+            initializeWebSocket() {
+                try {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const host = window.location.hostname;
+                    let serverUrl;
+
+                    if (host === 'localhost' || host === '127.0.0.1') {
+                        serverUrl = `${protocol}//localhost:3000`;
+                    } else {
+                        serverUrl = `${protocol}//${host}:3000`;
+                    }
+
+                    this.websocket = new WebSocket(serverUrl);
+
+                    this.websocket.onopen = (event) => {
+                        this.updateConnectionStatus('connected');
+                        this.addLog('Connected to multi-device server', 'info');
+                    };
+
+                    this.websocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleWebSocketMessage(data);
+                        } catch (error) {
+                            console.error('Error parsing WebSocket message:', error);
+                        }
+                    };
+
+                    this.websocket.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateConnectionStatus('disconnected');
+                    };
+
+                    this.websocket.onclose = () => {
+                        this.updateConnectionStatus('disconnected');
+                        this.addLog('Disconnected from server', 'info');
+                    };
+
+                } catch (error) {
+                    console.error('WebSocket initialization error:', error);
+                    this.addLog('Could not connect to server', 'danger');
+                }
+            }
+
+            handleWebSocketMessage(data) {
+                switch (data.type) {
+                    case 'client_count_update':
+                        this.connectedDevices = data.count;
+                        this.updateDeviceCount();
+                        this.checkDeviceCountForDanger();
+                        break;
+
+                    case 'access_alert':
+                        this.triggerDangerMode(true);
+                        this.playAlertSound();
+                        this.addLog(`🚨 ${data.message} from ${data.source}`, 'danger');
+                        break;
+
+                    case 'connection_status':
+                        this.addLog(data.message, 'info');
+                        break;
+
+                    case 'heartbeat_ack':
+                        // Heartbeat acknowledged
+                        break;
+                }
+            }
+
+            checkDeviceCountForDanger() {
+                const previousMode = this.isDangerMode;
+
+                // 1 device = normal, 2+ devices = dangerous
+                if (this.connectedDevices >= 2) {
+                    this.isDangerMode = true;
+                    this.addLog(`⚠️ DANGER MODE: ${this.connectedDevices} devices connected`, 'danger');
+                } else {
+                    this.isDangerMode = false;
+                    this.addLog(`✅ NORMAL MODE: ${this.connectedDevices} device connected`, 'normal');
+                }
+
+                // If mode changed to dangerous, update status and play alert sound
+                if (previousMode !== this.isDangerMode) {
+                    this.updateStatus();
+                    if (this.isDangerMode) {
+                        // Play alert sound when entering danger mode due to multiple devices
+                        this.playAlertSound();
+                        this.addLog('🚨 Alert sound played - Multiple devices detected!', 'danger');
+                    }
+                    this.handleMusicBasedOnMode();
+                }
+            }
+
+            handleMusicBasedOnMode() {
+                // No auto music functionality - only alert sounds
+                // This method is kept for compatibility but does nothing now
+            }
+
+            updateDeviceCount() {
+                document.getElementById('deviceCount').textContent = this.connectedDevices;
+                
+                let deviceListHTML = '';
+                for (let i = 0; i < this.connectedDevices; i++) {
+                    const status = i === 0 ? 'SAFE' : 'DANGEROUS';
+                    const statusClass = i === 0 ? 'device-safe' : 'device-dangerous';
+                    deviceListHTML += `
+                        <div class="device-item ${statusClass}">
+                            <span>Device ${i + 1}</span>
+                            <span class="device-status">${status}</span>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('deviceList').innerHTML = deviceListHTML || 'No devices connected';
+            }
+
+            updateStatus() {
+                const statusCircle = document.getElementById('statusCircle');
+                const statusText = document.getElementById('statusText');
+                const statusDescription = document.getElementById('statusDescription');
+
+                if (this.isDangerMode) {
+                    statusCircle.className = 'status-circle status-dangerous';
+                    statusText.textContent = 'DANGEROUS';
+                    statusDescription.textContent = 'Multiple devices detected! Potential security risk!';
+                    document.body.style.backgroundColor = '#ffebee';
+                } else {
+                    statusCircle.className = 'status-circle status-normal';
+                    statusText.textContent = 'NORMAL';
+                    statusDescription.textContent = 'Device access is normal';
+                    document.body.style.backgroundColor = '#f0f0f0';
+                }
+            }
+
+            updateConnectionStatus(status) {
+                const connectionStatus = document.getElementById('connectionStatus');
+                connectionStatus.className = `connection-status ${status}`;
+                connectionStatus.textContent = status.toUpperCase();
+            }
+
+            addLog(message, type = 'info') {
+                const logsContainer = document.getElementById('logsContainer');
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${type}`;
+                logEntry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+                
+                logsContainer.appendChild(logEntry);
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+
+            setupEventListeners() {
+                // Listen for localStorage changes from other tabs
+                window.addEventListener('storage', (event) => {
+                    if (event.key === 'childSafetyAlert') {
+                        try {
+                            const alertData = JSON.parse(event.newValue);
+                            if (alertData && alertData.type === 'access_detected') {
+                                this.triggerDangerMode(true);
+                                this.addLog(`🚨 Access detected from another tab`, 'danger');
+                            }
+                        } catch (e) {
+                            console.error('Error parsing localStorage alert:', e);
+                        }
+                    }
+                });
+
+                // Listen for page visibility changes
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        this.addLog('Page hidden', 'info');
+                    } else {
+                        this.addLog('Page visible', 'info');
+                    }
+                });
+            }
+
+            startHeartbeat() {
+                setInterval(() => {
+                    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                        this.websocket.send(JSON.stringify({
+                            type: 'heartbeat',
+                            timestamp: new Date().toISOString()
+                        }));
+                    }
+                }, 30000);
+            }
+
+            checkLocalStorageForAlerts() {
+                try {
+                    const accessTriggered = localStorage.getItem('childSafetyAccessTriggered');
+                    if (accessTriggered === 'true') {
+                        this.triggerDangerMode(true);
+                        this.addLog('Previous access detected from localStorage', 'danger');
+                    }
+                } catch (e) {
+                    console.error('Error checking localStorage:', e);
+                }
+            }
+
+            playAlertSound() {
+                if (!this.audioEnabled) {
+                    // Audio not enabled yet, set pending alert and show message
+                    this.pendingAlert = true;
+                    this.addLog('🔊 Click "Enable Sound" button to activate audio alerts', 'info');
+                    return;
+                }
+
+                const audio = document.getElementById('alertSound');
+                audio.play().catch(error => {
+                    console.log('Alert sound play blocked:', error);
+                    this.addLog(`❌ Alert sound blocked: ${error.message}`, 'danger');
+                });
+            }
+
+            enableSound() {
+                this.audioEnabled = true;
+                this.addLog('🔊 Audio enabled - alerts will now play', 'info');
+
+                // Hide the enable sound button and show test sound button
+                document.getElementById('enableSoundBtn').style.display = 'none';
+                document.getElementById('testSoundBtn').style.display = 'inline-block';
+
+                // Play any pending alert
+                if (this.pendingAlert) {
+                    this.pendingAlert = false;
+                    this.playAlertSound();
+                }
+            }
+
+            triggerDangerMode(fromExternal = false) {
+                this.isDangerMode = true;
+                this.updateStatus();
+                this.handleMusicBasedOnMode();
+                
+                if (!fromExternal && this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                    this.websocket.send(JSON.stringify({
+                        type: 'access_detected',
+                        timestamp: new Date().toISOString()
+                    }));
+                }
+            }
+
+            resetDetection() {
+                this.isDangerMode = false;
+                localStorage.removeItem('childSafetyAccessTriggered');
+                localStorage.removeItem('childSafetyAccessTime');
+                this.updateStatus();
+                this.handleMusicBasedOnMode();
+                this.addLog('Detection reset to normal mode', 'normal');
+            }
+
+
+        }
+
+        // Global functions for button clicks
+        function playTestSound() {
+            const monitor = window.childSafetyMonitor;
+            monitor.playAlertSound();
+            monitor.addLog('Test sound played', 'info');
+        }
+
+        function resetDetection() {
+            const monitor = window.childSafetyMonitor;
+            monitor.resetDetection();
+        }
+
+        function triggerDangerMode() {
+            const monitor = window.childSafetyMonitor;
+            monitor.triggerDangerMode();
+        }
+
+        function checkLocalStorage() {
+            const accessTriggered = localStorage.getItem('childSafetyAccessTriggered');
+            const accessTime = localStorage.getItem('childSafetyAccessTime');
+            alert(`LocalStorage:\nAccess Triggered: ${accessTriggered}\nAccess Time: ${accessTime}`);
+        }
+
+        function goToAccessPage() {
+            window.location.href = 'access.html';
+        }
+
+
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.childSafetyMonitor = new ChildSafetyMonitor();
+        });
+    </script>
+</body>
+</html>

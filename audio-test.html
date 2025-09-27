@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        button:hover {
+            background-color: #0b7dda;
+        }
+        audio {
+            margin: 20px 0;
+            width: 100%;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .success { background-color: #e8f5e8; color: #2e7d32; }
+        .error { background-color: #ffebee; color: #c62828; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio Test Page</h1>
+
+        <div id="audioStatus" class="status">Testing audio...</div>
+
+        <audio id="testAudio" controls preload="auto">
+            <source src="music.mp3" type="audio/mpeg">
+            Your browser does not support the audio element.
+        </audio>
+
+        <br>
+
+        <button onclick="playAudio()">Play Audio</button>
+        <button onclick="testAudioFile()">Test File Existence</button>
+        <button onclick="goBack()">Back to Main App</button>
+
+        <div id="debugInfo" style="margin-top: 20px; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 5px;">
+            <h3>Debug Information:</h3>
+            <div id="debugContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const audio = document.getElementById('testAudio');
+        const audioStatus = document.getElementById('audioStatus');
+        const debugContent = document.getElementById('debugContent');
+
+        function logDebug(message) {
+            debugContent.innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + message + '</div>';
+        }
+
+        function testAudioFile() {
+            logDebug('Testing if music.mp3 file exists...');
+
+            fetch('music.mp3')
+                .then(response => {
+                    if (response.ok) {
+                        logDebug('✅ music.mp3 file found (Status: ' + response.status + ')');
+                        logDebug('File size: ' + response.headers.get('content-length') + ' bytes');
+                        audioStatus.className = 'status success';
+                        audioStatus.textContent = 'Audio file found and accessible';
+                    } else {
+                        logDebug('❌ music.mp3 file not found (Status: ' + response.status + ')');
+                        audioStatus.className = 'status error';
+                        audioStatus.textContent = 'Audio file not found or not accessible';
+                    }
+                })
+                .catch(error => {
+                    logDebug('❌ Error accessing music.mp3: ' + error.message);
+                    audioStatus.className = 'status error';
+                    audioStatus.textContent = 'Error accessing audio file: ' + error.message;
+                });
+        }
+
+        function playAudio() {
+            logDebug('Attempting to play audio...');
+
+            const playPromise = audio.play();
+
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    logDebug('✅ Audio started playing successfully');
+                    audioStatus.className = 'status success';
+                    audioStatus.textContent = 'Audio is playing';
+                }).catch(error => {
+                    logDebug('❌ Error playing audio: ' + error.message);
+                    audioStatus.className = 'status error';
+                    audioStatus.textContent = 'Error playing audio: ' + error.message;
+
+                    // Provide helpful suggestions
+                    if (error.name === 'NotAllowedError') {
+                        logDebug('💡 Suggestion: Click anywhere on the page first, then try again (browser autoplay policy)');
+                    } else if (error.name === 'NotSupportedError') {
+                        logDebug('💡 Suggestion: The audio format may not be supported by your browser');
+                    }
+                });
+            }
+        }
+
+        function goBack() {
+            window.location.href = 'index.html';
+        }
+
+        // Test on page load
+        window.addEventListener('load', () => {
+            logDebug('Page loaded. Audio element ready.');
+            logDebug('Browser user agent: ' + navigator.userAgent);
+            logDebug('Audio supported: ' + (typeof audio.canPlayType === 'function'));
+            logDebug('MP3 support: ' + audio.canPlayType('audio/mpeg'));
+
+            // Check if user has interacted with the page (required for autoplay)
+            document.addEventListener('click', () => {
+                logDebug('User interaction detected - audio should now work');
+            }, { once: true });
+        });
+    </script>
+</body>
+</html>
